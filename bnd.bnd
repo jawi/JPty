@@ -1,0 +1,9 @@
+-buildpath: lib/jna.jar;version=file,\
+	lib/purejavacomm-0.0.8.jar;version=file,\
+	junit.osgi;version=3.8.2
+Private-Package: jpty.linux,\
+	jpty.macosx,\
+	jpty.solaris,\
+	jpty.windows
+Export-Package: jpty;version=1.0.0
+Bundle-Version: 0.0.3
