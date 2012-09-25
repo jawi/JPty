@@ -20,8 +20,22 @@
  */
 package jpty.solaris;
 
+import static jtermios.JTermios.B38400;
+import static jtermios.JTermios.CLOCAL;
+import static jtermios.JTermios.CREAD;
+import static jtermios.JTermios.CS8;
+import static jtermios.JTermios.ECHO;
+import static jtermios.JTermios.ECHOE;
+import static jtermios.JTermios.ICANON;
+import static jtermios.JTermios.ISIG;
+import static jtermios.JTermios.IXOFF;
+import static jtermios.JTermios.IXON;
+import static jtermios.JTermios.OPOST;
 import static jtermios.JTermios.O_RDWR;
 import static jtermios.JTermios.TCSANOW;
+import static jtermios.JTermios.VEOF;
+import static jtermios.JTermios.VSTART;
+import static jtermios.JTermios.VSTOP;
 import static jtermios.JTermios.close;
 import static jtermios.JTermios.open;
 import static jtermios.JTermios.tcsetattr;
@@ -86,17 +100,33 @@ public class JPtyImpl implements JPtyInterface {
     }
 
     // CONSTANTS
+    
+    // stropts.h
+    private static final int _STR = ('S' << 8);
+    private static final int I_PUSH = (_STR | 2);
 
-    private static final int _TIOC = ('T' << 8);
-    private static final int TIOCGWINSZ = (_TIOC | 104);
-    private static final int TIOCSWINSZ = (_TIOC | 103);
-    
-    private static final int _SID = ('S' << 8);
-    private static final int I_PUSH = (_SID | 2);
-    
+    // unistd.h
     private static final int STDIN_FILENO = 0;
     private static final int STDOUT_FILENO = 1;
     private static final int STDERR_FILENO = 2;
+    
+    // termios.h
+    private static final int _TIOC = ('T' << 8);
+    private static final int TIOCGWINSZ = (_TIOC | 104);
+    private static final int TIOCSWINSZ = (_TIOC | 103);
+
+    private static final int ONLCR = 0x04;
+
+    private static final int VINTR = 0;
+    private static final int VQUIT = 1;
+    private static final int VERASE = 2;
+    private static final int VKILL = 3;
+    private static final int VSUSP = 10;
+    private static final int VREPRINT = 12;
+    private static final int VWERASE = 14;
+    
+    private static final int ECHOCTL = 0x1000;
+    private static final int ECHOKE = 0x4000;
 
     private static final String DEV_PTMX = "/dev/ptmx";
 
@@ -181,6 +211,26 @@ public class JPtyImpl implements JPtyInterface {
                 close(fdSlave);
                 return pid;
         }
+    }
+    
+    @Override
+    public jtermios.Termios getDefaultTermios() {
+        jtermios.Termios result = new jtermios.Termios();
+        result.c_iflag = IXON | IXOFF;
+        result.c_oflag = OPOST | ONLCR;
+        result.c_cflag = CS8 | CREAD | CLOCAL | B38400;
+        result.c_lflag = ICANON | ISIG | ECHO | ECHOE | ECHOKE | ECHOCTL;
+        result.c_cc[VSTART] = 'Q' & 0x1f;
+        result.c_cc[VSTOP] = 'S' & 0x1f;
+        result.c_cc[VERASE] = 0x7f;
+        result.c_cc[VKILL] = 'U' & 0x1f;
+        result.c_cc[VINTR] = 'C' & 0x1f;
+        result.c_cc[VQUIT] = '\\' & 0x1f;
+        result.c_cc[VEOF] = 'D' & 0x1f;
+        result.c_cc[VSUSP] = 'Z' & 0x1f;
+        result.c_cc[VWERASE] = 'W' & 0x1f;
+        result.c_cc[VREPRINT] = 'R' & 0x1f;
+        return result;
     }
 
     @Override

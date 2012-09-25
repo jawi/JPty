@@ -18,7 +18,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package jpty.macosx;
+package jpty.freebsd;
 
 import static jtermios.JTermios.B38400;
 import static jtermios.JTermios.CLOCAL;
@@ -34,20 +34,22 @@ import static jtermios.JTermios.OPOST;
 import static jtermios.JTermios.VEOF;
 import static jtermios.JTermios.VSTART;
 import static jtermios.JTermios.VSTOP;
+
 import jpty.JPty.JPtyInterface;
 import jpty.WinSize;
-import jtermios.macosx.JTermiosImpl.MacOSX_C_lib.Termios;
+import jtermios.Termios;
+import jtermios.linux.JTermiosImpl.Linux_C_lib.termios;
 
 import com.sun.jna.Native;
 import com.sun.jna.StringArray;
 import com.sun.jna.Structure;
 
 /**
- * Provides a {@link JPtyInterface} implementation for MacOSX.
+ * Provides the PTY specific functions for FreeBSD.
  */
 public class JPtyImpl implements JPtyInterface {
     // INNER TYPES
-    
+
     public static class winsize extends Structure {
         public short ws_row;
         public short ws_col;
@@ -63,7 +65,7 @@ public class JPtyImpl implements JPtyInterface {
             ws_xpixel = ws.ws_xpixel;
             ws_ypixel = ws.ws_ypixel;
         }
-        
+
         public void update(WinSize winSize) {
             winSize.ws_col = ws_col;
             winSize.ws_row = ws_row;
@@ -71,24 +73,26 @@ public class JPtyImpl implements JPtyInterface {
             winSize.ws_ypixel = ws_ypixel;
         }
     }
-    
-    public interface MacOSX_C_lib extends com.sun.jna.Library {
-        public int execv(String command, StringArray argv);
-        
+
+    public interface FreeBSD_Util_lib extends com.sun.jna.Library {
+        public int forkpty(int[] amaster, byte[] name, termios termp, winsize winp);
+    }
+
+    public interface FreeBSD_C_lib extends com.sun.jna.Library {
         public int execve(String command, StringArray argv, StringArray env);
 
-        public int forkpty(int[] amaster, byte[] name, Termios termp, winsize winp);
-
-        public int ioctl(int fd, int cmd, winsize data);
+        public int ioctl(int fd, int cmd, winsize arg);
 
         public int waitpid(int pid, int[] stat, int options);
     }
-    
+
     // CONSTANTS
 
+    // sys/ttycom.h
     private static final int TIOCGWINSZ = 0x40087468;
     private static final int TIOCSWINSZ = 0x80087467;
 
+    // sys/termios.h
     private static final int ONLCR = 0x02;
 
     private static final int VERASE = 3;
@@ -98,30 +102,32 @@ public class JPtyImpl implements JPtyInterface {
     private static final int VINTR = 8;
     private static final int VQUIT = 9;
     private static final int VSUSP = 10;
-    
+
     private static final int ECHOKE = 0x01;
     private static final int ECHOCTL = 0x40;
 
     // VARIABLES
-    
-    private static MacOSX_C_lib m_Clib = (MacOSX_C_lib) Native.loadLibrary("c", MacOSX_C_lib.class);
+
+    private static FreeBSD_C_lib m_Clib = (FreeBSD_C_lib) Native.loadLibrary("c", FreeBSD_C_lib.class);
+
+    private static FreeBSD_Util_lib m_Utillib = (FreeBSD_Util_lib) Native.loadLibrary("util", FreeBSD_Util_lib.class);
 
     // METHODS
-     
+
     @Override
     public int execve(String command, String[] argv, String[] env) {
         StringArray argvp = (argv == null) ? new StringArray(new String[] { command }) : new StringArray(argv);
-        StringArray envp = (env == null) ? null : new StringArray(env);
+        StringArray envp = (env == null) ? new StringArray(new String[0]) : new StringArray(env);
         return m_Clib.execve(command, argvp, envp);
     }
-    
+
     @Override
-    public int forkpty(int[] amaster, byte[] name, jtermios.Termios term, WinSize win) {
-        Termios termp = (term == null) ? new Termios() : new Termios(term);
+    public int forkpty(int[] amaster, byte[] name, Termios term, WinSize win) {
+        termios termp = (term == null) ? null : new termios(term);
         winsize winp = (win == null) ? null : new winsize(win);
-        return m_Clib.forkpty(amaster, name, termp, winp);
+        return m_Utillib.forkpty(amaster, name, termp, winp);
     }
-    
+
     @Override
     public jtermios.Termios getDefaultTermios() {
         jtermios.Termios result = new jtermios.Termios();
@@ -141,11 +147,11 @@ public class JPtyImpl implements JPtyInterface {
         result.c_cc[VREPRINT] = 'R' & 0x1f;
         return result;
     }
-    
+
     @Override
     public int getWinSize(int fd, WinSize winSize) {
         int r;
-        
+
         winsize ws = new winsize();
         if ((r = m_Clib.ioctl(fd, TIOCGWINSZ, ws)) < 0) {
             return r;
@@ -160,7 +166,7 @@ public class JPtyImpl implements JPtyInterface {
         winsize ws = new winsize(winSize);
         return m_Clib.ioctl(fd, TIOCSWINSZ, ws);
     }
-    
+
     @Override
     public int waitpid(int pid, int[] stat, int options) {
         return m_Clib.waitpid(pid, stat, options);

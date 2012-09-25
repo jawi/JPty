@@ -40,6 +40,12 @@ public class JPtyImpl implements JPtyInterface {
         // TODO Auto-generated method stub
         return -1;
     }
+    
+    @Override
+    public Termios getDefaultTermios() {
+        // TODO Auto-generated method stub
+        return null;
+    }
 
     @Override
     public int getWinSize(int fd, WinSize ws) {

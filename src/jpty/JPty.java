@@ -34,16 +34,65 @@ import com.sun.jna.Platform;
 public class JPty {
     // INNER TYPES
 
+    /**
+     * Provides a OS-specific interface to the JPty methods.
+     */
     public static interface JPtyInterface {
+        /**
+         * Transforms the calling process into a new process.
+         * 
+         * @param command the command to execute;
+         * @param argv the arguments, by convention begins with the command to execute;
+         * @param env the (optional) environment options.
+         * @return 0 upon success, -1 upon failure (see {@link JPty#errno()} for details).
+         */
         int execve(String command, String[] argv, String[] env);
 
+        /**
+         * Forks a slave process in a pseudoterminal and prepares this process for executing a process.
+         * 
+         * @param amaster the array in which the FD of the master will be stored;
+         * @param name the array in which (optional) name of the slave PTY will be stored;
+         * @param termp the initial termios options to use for the slave;
+         * @param winp the initial winsize options to use for the slave.
+         * @return 0 upon success, -1 upon failure (see {@link JPty#errno()} for details).
+         */
         int forkpty(int[] amaster, byte[] name, Termios termp, WinSize winp);
 
+        /**
+         * Returns the window size information for the process with the given FD and stores the results in the given {@link WinSize} structure.
+         * 
+         * @param fd the FD of the process to query;
+         * @param ws the WinSize structure to store the results into.
+         * @return 0 upon success, -1 upon failure (see {@link JPty#errno()} for details).
+         */
         int getWinSize(int fd, WinSize ws);
 
+        /**
+         * Sets the window size information for the process with the given FD using the given {@link WinSize} structure.
+         * 
+         * @param fd the FD of the process to set the window size for;
+         * @param ws the WinSize structure with information about the window size.
+         * @return 0 upon success, -1 upon failure (see {@link JPty#errno()} for details).
+         */
         int setWinSize(int fd, WinSize ws);
 
+        /**
+         * Waits until the process with the given PID is stopped.
+         * 
+         * @param pid the PID of the process to wait for;
+         * @param stat the array in which the result code of the process will be stored;
+         * @param options the options for waitpid (not used at the moment).
+         * @return 0 upon success, -1 upon failure (see {@link JPty#errno()} for details).
+         */
         int waitpid(int pid, int[] stat, int options);
+
+        /**
+         * Returns a default termios structure.
+         * 
+         * @return a {@link Termios} structure, may be <code>null</code>.
+         */
+        Termios getDefaultTermios();
     }
 
     // VARIABLES
@@ -61,6 +110,12 @@ public class JPty {
         }
         else if (Platform.isSolaris()) {
             m_jpty = new jpty.solaris.JPtyImpl();
+        }
+        else if (Platform.isFreeBSD()) {
+            m_jpty = new jpty.freebsd.JPtyImpl();
+        }
+        else if (Platform.isWindows()) {
+            m_jpty = new jpty.windows.JPtyImpl();
         }
         else {
             throw new RuntimeException("JPty has no support for OS " + System.getProperty("os.name"));
@@ -82,8 +137,7 @@ public class JPty {
      * @return a {@link Pty} instance, never <code>null</code>.
      * @throws IOException in case opening the pseudoterminal failed.
      */
-    public static Pty execInPTY(String command, String[] arguments)
-        throws IOException {
+    public static Pty execInPTY(String command, String[] arguments) throws IOException {
         return execInPTY(command, arguments, null);
     }
 
@@ -93,8 +147,7 @@ public class JPty {
      * @return a {@link Pty} instance, never <code>null</code>.
      * @throws IOException in case opening the pseudoterminal failed.
      */
-    public static Pty execInPTY(String command, String[] arguments,
-        String[] environment) throws IOException {
+    public static Pty execInPTY(String command, String[] arguments, String[] environment) throws IOException {
         return execInPTY(command, arguments, environment, null, null);
     }
 
@@ -110,6 +163,10 @@ public class JPty {
     public static Pty execInPTY(String command, String[] arguments, String[] environment, Termios termios, WinSize winsize) throws IOException {
         if (command == null) {
             throw new IllegalArgumentException("Invalid command line!");
+        }
+
+        if (termios == null) {
+            termios = m_jpty.getDefaultTermios();
         }
 
         int[] master = new int[] { -1 };

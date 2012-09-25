@@ -20,6 +20,21 @@
  */
 package jpty.linux;
 
+import static jtermios.JTermios.B38400;
+import static jtermios.JTermios.CLOCAL;
+import static jtermios.JTermios.CREAD;
+import static jtermios.JTermios.CS8;
+import static jtermios.JTermios.ECHO;
+import static jtermios.JTermios.ECHOE;
+import static jtermios.JTermios.ICANON;
+import static jtermios.JTermios.ISIG;
+import static jtermios.JTermios.IXOFF;
+import static jtermios.JTermios.IXON;
+import static jtermios.JTermios.OPOST;
+import static jtermios.JTermios.VEOF;
+import static jtermios.JTermios.VSTART;
+import static jtermios.JTermios.VSTOP;
+
 import jpty.JPty.JPtyInterface;
 import jpty.WinSize;
 import jtermios.Termios;
@@ -34,16 +49,19 @@ import com.sun.jna.Structure;
  */
 public class JPtyImpl implements JPtyInterface {
     // INNER TYPES
-    
+
     public static class winsize extends Structure {
         public short ws_row;
+
         public short ws_col;
+
         public short ws_xpixel;
+
         public short ws_ypixel;
-        
+
         public winsize() {
         }
-        
+
         public winsize(WinSize ws) {
             ws_row = ws.ws_row;
             ws_col = ws.ws_col;
@@ -58,11 +76,12 @@ public class JPtyImpl implements JPtyInterface {
             winSize.ws_ypixel = ws_ypixel;
         }
     }
-    
+
     public interface Linux_Util_lib extends com.sun.jna.Library {
-        public int forkpty(int[] amaster, byte[] name, termios termp, winsize winp);
+        public int forkpty(int[] amaster, byte[] name, termios termp,
+            winsize winp);
     }
-    
+
     public interface Linux_C_lib extends com.sun.jna.Library {
         public int execve(String command, StringArray argv, StringArray env);
 
@@ -70,37 +89,75 @@ public class JPtyImpl implements JPtyInterface {
 
         public int waitpid(int pid, int[] stat, int options);
     }
-    
+
     // CONSTANTS
-    
-    private final static int TIOCGWINSZ  = 0x00005413;
-    private final static int TIOCSWINSZ  = 0x00005414;
+
+    private static final int TIOCGWINSZ = 0x00005413;
+    private static final int TIOCSWINSZ = 0x00005414;
+
+    private static final int ONLCR = 0x04;
+
+    private static final int VINTR = 0;
+    private static final int VQUIT = 1;
+    private static final int VERASE = 2;
+    private static final int VKILL = 3;
+    private static final int VSUSP = 10;
+    private static final int VREPRINT = 12;
+    private static final int VWERASE = 14;
+
+    private static final int ECHOKE = 0x01;
+    private static final int ECHOCTL = 0x40;
 
     // VARIABLES
-    
-    private static Linux_C_lib m_Clib = (Linux_C_lib) Native.loadLibrary("c", Linux_C_lib.class);
-    private static Linux_Util_lib m_Utillib = (Linux_Util_lib) Native.loadLibrary("util", Linux_Util_lib.class);
+
+    private static Linux_C_lib m_Clib = (Linux_C_lib) Native.loadLibrary("c",
+        Linux_C_lib.class);
+
+    private static Linux_Util_lib m_Utillib = (Linux_Util_lib) Native
+        .loadLibrary("util", Linux_Util_lib.class);
 
     // METHODS
-    
+
     @Override
     public int execve(String command, String[] argv, String[] env) {
-        StringArray argvp = (argv == null) ? new StringArray(new String[] { command }) : new StringArray(argv);
-        StringArray envp = (env == null) ? new StringArray(new String[0]) : new StringArray(env);
+        StringArray argvp = (argv == null) ? new StringArray(
+            new String[] { command }) : new StringArray(argv);
+        StringArray envp = (env == null) ? new StringArray(new String[0])
+            : new StringArray(env);
         return m_Clib.execve(command, argvp, envp);
     }
-    
+
     @Override
     public int forkpty(int[] amaster, byte[] name, Termios term, WinSize win) {
         termios termp = (term == null) ? null : new termios(term);
         winsize winp = (win == null) ? null : new winsize(win);
         return m_Utillib.forkpty(amaster, name, termp, winp);
     }
-    
+
+    @Override
+    public jtermios.Termios getDefaultTermios() {
+        jtermios.Termios result = new jtermios.Termios();
+        result.c_iflag = IXON | IXOFF;
+        result.c_oflag = OPOST | ONLCR;
+        result.c_cflag = CS8 | CREAD | CLOCAL | B38400;
+        result.c_lflag = ICANON | ISIG | ECHO | ECHOE | ECHOKE | ECHOCTL;
+        result.c_cc[VSTART] = 'Q' & 0x1f;
+        result.c_cc[VSTOP] = 'S' & 0x1f;
+        result.c_cc[VERASE] = 0x7f;
+        result.c_cc[VKILL] = 'U' & 0x1f;
+        result.c_cc[VINTR] = 'C' & 0x1f;
+        result.c_cc[VQUIT] = '\\' & 0x1f;
+        result.c_cc[VEOF] = 'D' & 0x1f;
+        result.c_cc[VSUSP] = 'Z' & 0x1f;
+        result.c_cc[VWERASE] = 'W' & 0x1f;
+        result.c_cc[VREPRINT] = 'R' & 0x1f;
+        return result;
+    }
+
     @Override
     public int getWinSize(int fd, WinSize winSize) {
         int r;
-        
+
         winsize ws = new winsize();
         if ((r = m_Clib.ioctl(fd, TIOCGWINSZ, ws)) < 0) {
             return r;
@@ -115,7 +172,7 @@ public class JPtyImpl implements JPtyInterface {
         winsize ws = new winsize(winSize);
         return m_Clib.ioctl(fd, TIOCSWINSZ, ws);
     }
-    
+
     @Override
     public int waitpid(int pid, int[] stat, int options) {
         return m_Clib.waitpid(pid, stat, options);
