@@ -6,4 +6,4 @@ Private-Package: jpty.linux,\
 	jpty.solaris,\
 	jpty.windows
 Export-Package: jpty;version=1.0.0
-Bundle-Version: 0.0.3
+Bundle-Version: 0.0.4
