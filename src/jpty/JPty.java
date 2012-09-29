@@ -21,12 +21,11 @@
 package jpty;
 
 
-import static jtermios.JTermios.*;
+import static jtermios.JTermios.F_SETFL;
+import static jtermios.JTermios.fcntl;
 
-import java.io.IOException;
 import java.util.Arrays;
 
-import jtermios.JTermios;
 import jtermios.Termios;
 
 import com.sun.jna.Native;
@@ -119,9 +118,9 @@ public class JPty
      */
     int waitpid( int pid, int[] stat, int options );
   }
-  
+
   // CONSTANTS
-  
+
   public static int ONLCR = 0x04;
 
   public static int VINTR = 0;
@@ -131,7 +130,7 @@ public class JPty
   public static int VSUSP = 10;
   public static int VREPRINT = 12;
   public static int VWERASE = 14;
-  
+
   public static int ECHOCTL = 0x1000;
   public static int ECHOKE = 0x4000;
 
@@ -142,7 +141,7 @@ public class JPty
   // METHODS
 
   static
-  { 
+  {
     if ( Platform.isMac() )
     {
       m_jpty = new jpty.macosx.JPtyImpl();
@@ -166,24 +165,20 @@ public class JPty
   }
 
   /**
-   * Returns the last known error.
-   * 
-   * @return the last error number from the native system.
-   */
-  public static int errno()
-  {
-    return Native.getLastError();
-  }
-
-  /**
    * Opens a pseudoterminal pair, grants and unlocks access to it, and runs the
    * given command on the slave pseudoterminal.
    * 
+   * @param command
+   *          the command to execute in the pseudoterminal, cannot be
+   *          <code>null</code>;
+   * @param arguments
+   *          the optional command line arguments of the command, may be
+   *          <code>null</code>.
    * @return a {@link Pty} instance, never <code>null</code>.
-   * @throws IOException
+   * @throws JPtyException
    *           in case opening the pseudoterminal failed.
    */
-  public static Pty execInPTY( String command, String[] arguments ) throws IOException
+  public static Pty execInPTY( String command, String[] arguments ) throws JPtyException
   {
     return execInPTY( command, arguments, null );
   }
@@ -192,11 +187,19 @@ public class JPty
    * Opens a pseudoterminal pair, grants and unlocks access to it, and runs the
    * given command on the slave pseudoterminal.
    * 
+   * @param command
+   *          the command to execute in the pseudoterminal, cannot be
+   *          <code>null</code>;
+   * @param arguments
+   *          the optional command line arguments of the command, may be
+   *          <code>null</code>;
+   * @param environment
+   *          the environment for the command, may be <code>null</code>.
    * @return a {@link Pty} instance, never <code>null</code>.
-   * @throws IOException
+   * @throws JPtyException
    *           in case opening the pseudoterminal failed.
    */
-  public static Pty execInPTY( String command, String[] arguments, String[] environment ) throws IOException
+  public static Pty execInPTY( String command, String[] arguments, String[] environment ) throws JPtyException
   {
     return execInPTY( command, arguments, environment, null, null );
   }
@@ -205,18 +208,26 @@ public class JPty
    * Opens a pseudoterminal pair, grants and unlocks access to it, and runs the
    * given command on the slave pseudoterminal.
    * 
+   * @param command
+   *          the command to execute in the pseudoterminal, cannot be
+   *          <code>null</code>;
+   * @param arguments
+   *          the optional command line arguments of the command, may be
+   *          <code>null</code>;
+   * @param environment
+   *          the environment for the command, may be <code>null</code>;
    * @param termios
    *          the initial termios structure, may be <code>null</code>;
    * @param winsize
    *          the initial winsize structure, may be <code>null</code>;
-   * @param commandLine
-   *          the command line to execute.
    * @return a {@link Pty} instance, never <code>null</code>.
-   * @throws IOException
+   * @throws IllegalArgumentException
+   *           in case the given command was <code>null</code>;
+   * @throws JPtyException
    *           in case opening the pseudoterminal failed.
    */
   public static Pty execInPTY( String command, String[] arguments, String[] environment, Termios termios,
-      WinSize winsize ) throws IOException
+      WinSize winsize ) throws JPtyException
   {
     if ( command == null )
     {
@@ -227,9 +238,9 @@ public class JPty
     byte[] name = new byte[128];
     int pid;
 
-    if ( ( pid = m_jpty.forkpty( master, name, termios, winsize ) ) < 0 )
+    if ( ( pid = m_jpty.forkpty( master, name, termios, null ) ) < 0 )
     {
-      throw new IOException( "Failed to open PTY!" );
+      throw new JPtyException( "Failed to open PTY!", errno() );
     }
 
     if ( pid == 0 )
@@ -237,69 +248,34 @@ public class JPty
       // Child...
       final String[] argv = processArgv( command, arguments );
 
+      if ( winsize != null )
+      {
+        if ( setWinSize( 0 /* stdin */, winsize ) < 0 )
+        {
+          throw new JPtyException( "Failed to set window size!", errno() );
+        }
+      }
+
       // Replaces this child process with the given command(line)...
       execve( command, argv, environment );
 
       // Actually, we should never come here if the command execution went OK...
-      throw new RuntimeException( "Child failed with error: " + errno() );
+      throw new JPtyException( "Child failed to replace process!", errno() );
     }
 
-    // Just a safety measure...
     int masterFD = master[0];
+    // Just a safety measure...
     if ( masterFD < 0 )
     {
-      throw new RuntimeException( "Failed to fork PTY!" );
+      throw new JPtyException( "Failed to fork PTY!", -1 );
     }
 
-    if ( termios == null )
+    if ( fcntl( masterFD, F_SETFL, 0 ) < 0 )
     {
-      termios = new jtermios.Termios();
-    }
-
-    if ( tcgetattr( masterFD, termios ) < 0 )
-    {
-      throw new RuntimeException( "Failed to get current attributes! Errno = " + errno() );
-    }
-    
-    termios.c_cflag |= CS8;
-    termios.c_cflag &= ~PARENB;
-    termios.c_iflag &= ~IXANY;
-    termios.c_oflag |= ONLCR | OPOST;
-    termios.c_lflag |= ICANON | ISIG;
-
-    if ( tcsetattr( masterFD, TCSANOW, termios ) < 0 )
-    {
-      throw new RuntimeException( "Failed to set terminal attributes! Errno = " + errno() );
-    }
-
-    if ( setspeed( masterFD, termios, JTermios.B115200 ) < 0 )
-    {
-      throw new RuntimeException( "Failed to set speed attribute! Errno = " + errno() );
-    }
-
-    if ( tcflush( masterFD, TCIOFLUSH ) < 0 )
-    {
-      throw new RuntimeException( "Failed to flush terminal attributes! Errno = " + errno() );
+      throw new JPtyException( "Failed to set flags for master PTY!", errno() );
     }
 
     return new Pty( masterFD, pid );
-  }
-
-  /**
-   * Blocks and waits until the given PID either terminates, or receives a
-   * signal.
-   * 
-   * @param pid
-   *          the process ID to wait for;
-   * @param stat
-   *          an array of 1 integer in which the status of the process is
-   *          stored;
-   * @param options
-   *          the bit mask with options.
-   */
-  public static int waitpid( int pid, int[] stat, int options )
-  {
-    return m_jpty.waitpid( pid, stat, options );
   }
 
   /**
@@ -331,8 +307,35 @@ public class JPty
   }
 
   /**
+   * Blocks and waits until the given PID either terminates, or receives a
+   * signal.
+   * 
+   * @param pid
+   *          the process ID to wait for;
+   * @param stat
+   *          an array of 1 integer in which the status of the process is
+   *          stored;
+   * @param options
+   *          the bit mask with options.
+   */
+  public static int waitpid( int pid, int[] stat, int options )
+  {
+    return m_jpty.waitpid( pid, stat, options );
+  }
+
+  /**
+   * Returns the last known error.
+   * 
+   * @return the last error number from the native system.
+   */
+  static int errno()
+  {
+    return Native.getLastError();
+  }
+
+  /**
    * Not public as this method <em>replaces</em> the current process and
-   * therefor should be used with caution.
+   * therefore should be used with caution.
    * 
    * @param command
    *          the command to execute.
