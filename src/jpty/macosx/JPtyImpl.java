@@ -24,7 +24,7 @@ package jpty.macosx;
 import jpty.JPty;
 import jpty.JPty.JPtyInterface;
 import jpty.WinSize;
-import jtermios.macosx.JTermiosImpl.MacOSX_C_lib.Termios;
+import jtermios.macosx.JTermiosImpl.MacOSX_C_lib.termios;
 
 import com.sun.jna.Native;
 import com.sun.jna.StringArray;
@@ -72,7 +72,7 @@ public class JPtyImpl implements JPtyInterface
 
     public int execve( String command, StringArray argv, StringArray env );
 
-    public int forkpty( int[] amaster, byte[] name, Termios termp, winsize winp );
+    public int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
 
     public int ioctl( int fd, int cmd, winsize data );
 
@@ -122,7 +122,7 @@ public class JPtyImpl implements JPtyInterface
   @Override
   public int forkpty( int[] amaster, byte[] name, jtermios.Termios term, WinSize win )
   {
-    Termios termp = ( term == null ) ? null : new Termios( term );
+    termios termp = ( term == null ) ? null : new termios( term );
     winsize winp = ( win == null ) ? null : new winsize( win );
     return m_Clib.forkpty( amaster, name, termp, winp );
   }
