@@ -36,11 +36,36 @@ import com.sun.jna.Structure;
 
 
 /**
- * @author jawi
+ * Provides a {@link JPtyInterface} implementation for Solaris.
  */
 public class JPtyImpl implements JPtyInterface
 {
   // INNER TYPES
+
+  public interface Solaris_C_lib extends com.sun.jna.Library
+  {
+    int dup2( int filedes, int filedes2 );
+
+    int execve( String command, StringArray argv, StringArray env );
+
+    int fork();
+
+    int grantpt( int fd );
+
+    int ioctl( int fd, int cmd, String arg );
+
+    int ioctl( int fd, int cmd, winsize arg );
+
+    int kill( int pid, int signal );
+
+    int openpt( int flags );
+
+    String ptsname( int fd );
+
+    int unlockpt( int fd );
+
+    int waitpid( int pid, int[] stat, int options );
+  }
 
   public static class winsize extends Structure
   {
@@ -70,29 +95,6 @@ public class JPtyImpl implements JPtyInterface
     }
   }
 
-  public interface Solaris_C_lib extends com.sun.jna.Library
-  {
-    public int dup2( int filedes, int filedes2 );
-
-    public int execve( String command, StringArray argv, StringArray env );
-
-    public int fork();
-
-    public int grantpt( int fd );
-
-    public int ioctl( int fd, int cmd, String arg );
-
-    public int ioctl( int fd, int cmd, winsize arg );
-
-    public int openpt( int flags );
-
-    public String ptsname( int fd );
-
-    public int unlockpt( int fd );
-
-    public int waitpid( int pid, int[] stat, int options );
-  }
-
   // CONSTANTS
 
   // stropts.h
@@ -109,17 +111,16 @@ public class JPtyImpl implements JPtyInterface
   private static final int TIOCGWINSZ = ( _TIOC | 104 );
   private static final int TIOCSWINSZ = ( _TIOC | 103 );
 
-
   private static final String DEV_PTMX = "/dev/ptmx";
 
   // VARIABLES
 
   private static Solaris_C_lib m_Clib = ( Solaris_C_lib )Native.loadLibrary( "c", Solaris_C_lib.class );
-  
+
   // CONSTRUCTORS
-  
+
   /**
-   * Creates a new {@link JPtyImpl} instance. 
+   * Creates a new {@link JPtyImpl} instance.
    */
   public JPtyImpl()
   {
@@ -185,11 +186,10 @@ public class JPtyImpl implements JPtyInterface
       return -1;
     }
 
-    if ( ioctl( fdSlave, I_PUSH, "ptem" ) < 0 || // pseudo-terminal hardware
-                                                 // emulation module,
-        ioctl( fdSlave, I_PUSH, "ldterm" ) < 0 || // standard terminal line
-                                                  // discipline, and
-        ioctl( fdSlave, I_PUSH, "ttcompat" ) < 0 )
+    // pseudo-terminal hardware emulation module,
+    // standard terminal line discipline, and
+    if ( ioctl( fdSlave, I_PUSH, "ptem" ) < 0 || ioctl( fdSlave, I_PUSH, "ldterm" ) < 0
+        || ioctl( fdSlave, I_PUSH, "ttcompat" ) < 0 )
     { // not sure but both xterm and DtTerm do it.
       close( fdSlave );
       close( fdMaster );
@@ -242,6 +242,12 @@ public class JPtyImpl implements JPtyInterface
     ws.update( winSize );
 
     return r;
+  }
+
+  @Override
+  public int kill( int pid, int signal )
+  {
+    return m_Clib.kill( pid, signal );
   }
 
   @Override

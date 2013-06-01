@@ -33,20 +33,33 @@ import com.sun.jna.Structure;
 
 
 /**
- * Provides the PTY specific functions for Linux.
+ * Provides a {@link JPtyInterface} implementation for Linux.
  */
 public class JPtyImpl implements JPtyInterface
 {
   // INNER TYPES
 
+  public interface Linux_C_lib extends com.sun.jna.Library
+  {
+    int execve( String command, StringArray argv, StringArray env );
+
+    int ioctl( int fd, int cmd, winsize arg );
+
+    int kill( int pid, int signal );
+
+    int waitpid( int pid, int[] stat, int options );
+  }
+
+  public interface Linux_Util_lib extends com.sun.jna.Library
+  {
+    int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
+  }
+
   public static class winsize extends Structure
   {
     public short ws_row;
-
     public short ws_col;
-
     public short ws_xpixel;
-
     public short ws_ypixel;
 
     public winsize()
@@ -70,20 +83,6 @@ public class JPtyImpl implements JPtyInterface
     }
   }
 
-  public interface Linux_Util_lib extends com.sun.jna.Library
-  {
-    public int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
-  }
-
-  public interface Linux_C_lib extends com.sun.jna.Library
-  {
-    public int execve( String command, StringArray argv, StringArray env );
-
-    public int ioctl( int fd, int cmd, winsize arg );
-
-    public int waitpid( int pid, int[] stat, int options );
-  }
-
   // CONSTANTS
 
   private static final int TIOCGWINSZ = 0x00005413;
@@ -94,11 +93,11 @@ public class JPtyImpl implements JPtyInterface
   private static Linux_C_lib m_Clib = ( Linux_C_lib )Native.loadLibrary( "c", Linux_C_lib.class );
 
   private static Linux_Util_lib m_Utillib = ( Linux_Util_lib )Native.loadLibrary( "util", Linux_Util_lib.class );
-  
+
   // CONSTRUCTORS
-  
+
   /**
-   * Creates anew {@link JPtyImpl} instance. 
+   * Creates anew {@link JPtyImpl} instance.
    */
   public JPtyImpl()
   {
@@ -147,6 +146,12 @@ public class JPtyImpl implements JPtyInterface
     ws.update( winSize );
 
     return r;
+  }
+
+  @Override
+  public int kill( int pid, int signal )
+  {
+    return m_Clib.kill( pid, signal );
   }
 
   @Override

@@ -20,80 +20,269 @@
  */
 package jpty;
 
+
+import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import junit.framework.TestCase;
 
 import com.sun.jna.Platform;
 
-import junit.framework.TestCase;
 
 /**
  * Test cases for {@link JPty}.
  */
-public class JPtyTest extends TestCase {
-    
-    private String m_command;
-    private String[] m_args;
+public class JPtyTest extends TestCase
+{
+  static class Command
+  {
+    final String m_command;
+    final String[] m_args;
 
-    /**
-     * Tests that we can execute a process in a PTY.
-     */
-    public void testExecInPTY() throws Exception {
-        final CountDownLatch latch = new CountDownLatch(1);
+    public Command( String command, String[] args )
+    {
+      m_command = command;
+      m_args = args;
+    }
+  }
 
-        // Start the process in a PTY...
-        final Pty pty = JPty.execInPTY(m_command, m_args);
-        final int[] result = { -1 };
+  /**
+   * Tests that the child process is terminated if the {@link Pty} closed before
+   * the child process is finished. Should keep track of issue #1.
+   */
+  public void testClosePtyTerminatesChildOk() throws Exception
+  {
+    final CountDownLatch latch = new CountDownLatch( 1 );
 
-        // Asynchronously wait for the process to end...
-        Thread t = new Thread() {
-            public void run() {
-                try {
-                    result[0] = pty.waitFor();
-                    latch.countDown();
-                }
-                catch (InterruptedException e) {
-                    // Simply stop the thread...
-                }
+    Command cmd = preparePingCommand( 15 );
+
+    // Start the process in a PTY...
+    final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
+    final int[] result = { -1 };
+
+    final AtomicInteger readChars = new AtomicInteger();
+
+    // Asynchronously check whether the output of the process is captured
+    // properly...
+    Thread t1 = new Thread()
+    {
+      public void run()
+      {
+        InputStream is = pty.getInputStream();
+
+        try
+        {
+          int ch;
+          while ( pty.isChildAlive() && ( ch = is.read() ) >= 0 )
+          {
+            if ( ch >= 0 )
+            {
+              readChars.incrementAndGet();
             }
-        };
-        t.start();
-        t.join();
+          }
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t1.start();
 
-        latch.await(10, TimeUnit.SECONDS);
-        
-        assertEquals("Unexpected process result!", 0, result[0]);
+    // Asynchronously wait for a little while, then close the PTY, which should
+    // force our child process to be terminated...
+    Thread t2 = new Thread()
+    {
+      public void run()
+      {
+        try
+        {
+          TimeUnit.MILLISECONDS.sleep( 500L );
+
+          pty.close();
+
+          result[0] = pty.waitFor();
+
+          latch.countDown();
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t2.start();
+
+    assertTrue( latch.await( 10, TimeUnit.SECONDS ) );
+    // We should've waited long enough to have read some of the input...
+    assertTrue( readChars.get() > 0 );
+
+    t1.join();
+    t2.join();
+
+    assertTrue( "Unexpected process result: " + result[0], -1 == result[0] );
+  }
+
+  /**
+   * Tests that closing the Pty after the child process is finished works
+   * normally. Should keep track of issue #1.
+   */
+  public void testClosePtyForTerminatedChildOk() throws Exception
+  {
+    final CountDownLatch latch = new CountDownLatch( 1 );
+
+    Command cmd = preparePingCommand( 1 );
+
+    // Start the process in a PTY...
+    final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
+    final int[] result = { -1 };
+
+    final AtomicInteger readChars = new AtomicInteger();
+
+    // Asynchronously check whether the output of the process is captured
+    // properly...
+    Thread t1 = new Thread()
+    {
+      public void run()
+      {
+        InputStream is = pty.getInputStream();
+
+        try
+        {
+          int ch;
+          while ( pty.isChildAlive() && ( ch = is.read() ) >= 0 )
+          {
+            if ( ch >= 0 )
+            {
+              readChars.incrementAndGet();
+            }
+          }
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t1.start();
+
+    // Asynchronously wait for a little while, then close the PTY, but our child
+    // process should be terminated already...
+    Thread t2 = new Thread()
+    {
+      public void run()
+      {
+        try
+        {
+          TimeUnit.MILLISECONDS.sleep( 1500L );
+
+          pty.close();
+
+          result[0] = pty.waitFor();
+
+          latch.countDown();
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t2.start();
+
+    assertTrue( latch.await( 10, TimeUnit.SECONDS ) );
+    // We should've waited long enough to have read some of the input...
+    assertTrue( readChars.get() > 0 );
+
+    t1.join();
+    t2.join();
+
+    assertTrue( "Unexpected process result: " + result[0], -1 == result[0] );
+  }
+
+  /**
+   * Tests that we can execute a process in a PTY, and wait for its normal
+   * termination.
+   */
+  public void testExecInPTY() throws Exception
+  {
+    final CountDownLatch latch = new CountDownLatch( 1 );
+
+    Command cmd = preparePingCommand( 2 );
+
+    // Start the process in a PTY...
+    final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
+    final int[] result = { -1 };
+
+    // Asynchronously wait for the process to end...
+    Thread t = new Thread()
+    {
+      public void run()
+      {
+        try
+        {
+          result[0] = pty.waitFor();
+
+          latch.countDown();
+        }
+        catch ( InterruptedException e )
+        {
+          // Simply stop the thread...
+        }
+      }
+    };
+    t.start();
+
+    assertTrue( "Child already terminated?!", pty.isChildAlive() );
+
+    assertTrue( latch.await( 10, TimeUnit.SECONDS ) );
+
+    t.join();
+
+    assertEquals( "Unexpected process result!", 0, result[0] );
+  }
+
+  /**
+   * Tests that getting and setting the window size for a file descriptor works.
+   */
+  public void testGetAndSetWinSize() throws Exception
+  {
+    Command cmd = preparePingCommand( 2 );
+
+    Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
+
+    WinSize ws = new WinSize();
+    ws.ws_col = 120;
+    ws.ws_row = 30;
+    pty.setWinSize( ws );
+
+    WinSize ws1 = pty.getWinSize();
+
+    assertNotNull( ws1 );
+    assertEquals( 120, ws1.ws_col );
+    assertEquals( 30, ws1.ws_row );
+
+    pty.waitFor();
+  }
+
+  private Command preparePingCommand( int count )
+  {
+    String value = Integer.toString( count );
+    if ( Platform.isWindows() )
+    {
+      return new Command( "ping", new String[] { "-n", value, "127.0.0.1" } );
+    }
+    else if ( Platform.isSolaris() )
+    {
+      return new Command( "/usr/sbin/ping", new String[] { "-s", "127.0.0.1", "64", value } );
+    }
+    else if ( Platform.isMac() || Platform.isLinux() || Platform.isFreeBSD() )
+    {
+      return new Command( "/sbin/ping", new String[] { "-c", value, "127.0.0.1" } );
     }
 
-    /**
-     * Tests that getting and setting the window size for a file descriptor works.
-     */
-    public void testGetAndSetWinSize() throws Exception {
-        Pty pty = JPty.execInPTY(m_command, m_args);
-        
-        WinSize ws = new WinSize();
-        ws.ws_col = 120;
-        ws.ws_row = 30;
-        pty.setWinSize(ws);
-
-        WinSize ws1 = pty.getWinSize();
-        assertNotNull(ws1);
-
-        pty.waitFor();
-    }
-
-    protected void setUp() throws Exception {
-        if (Platform.isWindows()) {
-            m_command = "ping";
-            m_args = new String[] { "-n", "2", "127.0.0.1" };
-        }
-        else if (Platform.isSolaris()) {
-            m_command = "/usr/sbin/ping";
-            m_args = new String[] { "-s", "127.0.0.1", "64", "2" };
-        }
-        else if (Platform.isMac() || Platform.isLinux()) {
-            m_command = "/sbin/ping";
-            m_args = new String[] { "-c", "2", "127.0.0.1" };
-        }
-    }
+    throw new RuntimeException( "Unsupported platform!" );
+  }
 }

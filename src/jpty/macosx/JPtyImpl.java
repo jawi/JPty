@@ -38,6 +38,21 @@ public class JPtyImpl implements JPtyInterface
 {
   // INNER TYPES
 
+  public interface MacOSX_C_lib extends com.sun.jna.Library
+  {
+    int execv( String command, StringArray argv );
+
+    int execve( String command, StringArray argv, StringArray env );
+
+    int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
+
+    int ioctl( int fd, int cmd, winsize data );
+
+    int kill( int pid, int signal );
+
+    int waitpid( int pid, int[] stat, int options );
+  }
+
   public static class winsize extends Structure
   {
     public short ws_row;
@@ -66,19 +81,6 @@ public class JPtyImpl implements JPtyInterface
     }
   }
 
-  public interface MacOSX_C_lib extends com.sun.jna.Library
-  {
-    public int execv( String command, StringArray argv );
-
-    public int execve( String command, StringArray argv, StringArray env );
-
-    public int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
-
-    public int ioctl( int fd, int cmd, winsize data );
-
-    public int waitpid( int pid, int[] stat, int options );
-  }
-
   // CONSTANTS
 
   private static final int TIOCGWINSZ = 0x40087468;
@@ -87,9 +89,9 @@ public class JPtyImpl implements JPtyInterface
   // VARIABLES
 
   private static MacOSX_C_lib m_Clib = ( MacOSX_C_lib )Native.loadLibrary( "c", MacOSX_C_lib.class );
-  
+
   // CONSTUCTORS
-  
+
   /**
    * Creates a new {@link JPtyImpl} instance.
    */
@@ -140,6 +142,12 @@ public class JPtyImpl implements JPtyInterface
     ws.update( winSize );
 
     return r;
+  }
+
+  @Override
+  public int kill( int pid, int signal )
+  {
+    return m_Clib.kill( pid, signal );
   }
 
   @Override

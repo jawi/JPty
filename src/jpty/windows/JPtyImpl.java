@@ -20,42 +20,57 @@
  */
 package jpty.windows;
 
+
 import jpty.JPty.JPtyInterface;
 import jpty.WinSize;
 import jtermios.Termios;
 
+
 /**
  *
  */
-public class JPtyImpl implements JPtyInterface {
+public class JPtyImpl implements JPtyInterface
+{
 
-    @Override
-    public int execve(String command, String[] argv, String[] env) {
-        // TODO Auto-generated method stub
-        return -1;
-    }
+  @Override
+  public int execve( String command, String[] argv, String[] env )
+  {
+    // TODO Auto-generated method stub
+    return -1;
+  }
 
-    @Override
-    public int forkpty(int[] amaster, byte[] name, Termios termp, WinSize winp) {
-        // TODO Auto-generated method stub
-        return -1;
-    }
+  @Override
+  public int forkpty( int[] amaster, byte[] name, Termios termp, WinSize winp )
+  {
+    // TODO Auto-generated method stub
+    return -1;
+  }
 
-    @Override
-    public int getWinSize(int fd, WinSize ws) {
-        // TODO Auto-generated method stub
-        return -1;
-    }
+  @Override
+  public int getWinSize( int fd, WinSize ws )
+  {
+    // TODO Auto-generated method stub
+    return -1;
+  }
 
-    @Override
-    public int setWinSize(int fd, WinSize ws) {
-        // TODO Auto-generated method stub
-        return -1;
-    }
-    
-    @Override
-    public int waitpid(int pid, int[] stat, int options) {
-        // TODO Auto-generated method stub
-        return -1;
-    }
+  @Override
+  public int setWinSize( int fd, WinSize ws )
+  {
+    // TODO Auto-generated method stub
+    return -1;
+  }
+
+  @Override
+  public int waitpid( int pid, int[] stat, int options )
+  {
+    // TODO Auto-generated method stub
+    return -1;
+  }
+
+  @Override
+  public int kill( int pid, int sig )
+  {
+    // TODO Auto-generated method stub
+    return 0;
+  }
 }

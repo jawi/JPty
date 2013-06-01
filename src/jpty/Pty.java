@@ -20,6 +20,11 @@
  */
 package jpty;
 
+
+import static jpty.JPty.SIGKILL;
+import static jpty.JPty.isProcessAlive;
+import static jpty.JPty.signal;
+import static jpty.JPty.waitpid;
 import static jtermios.JTermios.FIONREAD;
 import static jtermios.JTermios.F_GETFL;
 import static jtermios.JTermios.F_SETFL;
@@ -36,238 +41,343 @@ import java.io.OutputStream;
 
 import jtermios.JTermios;
 
+
 /**
  * Denotes a pseudoterminal.
  */
-public final class Pty implements Closeable {
-    
-    // VARIABLES
+public final class Pty implements Closeable
+{
 
-    int m_childPid;
-    int m_fdMaster;
+  // VARIABLES
 
-    private volatile InputStream m_masterIS;
-    private volatile OutputStream m_masterOS;
+  private volatile int m_childPid;
+  private volatile int m_fdMaster;
 
-    // CONSTRUCTORS
-    
-    /**
-     * Creates a new {@link Pty} instance.
-     * 
-     * @param fdMaster the file descriptor of the master process;
-     * @param childPid the PID of the child process.
-     */
-    Pty(int fdMaster, int childPid) {
-        m_fdMaster = fdMaster;
-        m_childPid = childPid;
+  private volatile InputStream m_masterIS;
+  private volatile OutputStream m_masterOS;
+
+  // CONSTRUCTORS
+
+  /**
+   * Creates a new {@link Pty} instance.
+   * 
+   * @param fdMaster
+   *          the file descriptor of the master process;
+   * @param childPid
+   *          the PID of the child process.
+   */
+  Pty( int fdMaster, int childPid )
+  {
+    m_fdMaster = fdMaster;
+    m_childPid = childPid;
+  }
+
+  // METHODS
+
+  /**
+   * Closes this {@link Pty} instance, and terminates the child process, in case
+   * it is still running.
+   * 
+   * @throws IOException
+   *           in case closing of this {@link Pty} failed.
+   */
+  @Override
+  public void close() throws IOException
+  {
+    close( true /* terminateChild */);
+  }
+
+  /**
+   * Closes this {@link Pty} instance, possibly by forcefully terminating the
+   * child process.
+   * <p>
+   * Note that if the child is not yet terminated, and this method is called
+   * with <tt>false</tt> as argument, this method will <em>block</em> until the
+   * child process terminates naturally, which can be indefinitely.
+   * </p>
+   * 
+   * @param terminateChild
+   *          <code>true</code> to force a termination of the child process,
+   *          <code>false</code> to let the child process terminate naturally.
+   * @throws IOException
+   *           in case closing of this {@link Pty} failed.
+   */
+  public void close( boolean terminateChild ) throws IOException
+  {
+    final int fd = m_fdMaster;
+    final int childPid = m_childPid;
+
+    m_fdMaster = -1;
+    m_childPid = -1;
+
+    if ( fd != -1 )
+    {
+      // Make the FD non-blocking so we can close it properly...
+      int flags = fcntl( fd, F_GETFL, 0 );
+      flags |= O_NONBLOCK;
+      fcntl( fd, F_SETFL, flags );
+
+      // Request the child to terminate, if desired; see issue #1...
+      if ( terminateChild && isProcessAlive( childPid ) )
+      {
+        signal( childPid, SIGKILL );
+      }
+
+      int err = JTermios.close( fd );
+      if ( err != 0 )
+      {
+        throw new IOException( "Failed to close pseudoterminal!" );
+      }
+
+      m_masterIS = closeSilently( m_masterIS );
+      m_masterOS = closeSilently( m_masterOS );
+    }
+  }
+
+  /**
+   * Returns the input stream to the pseudoterminal.
+   * 
+   * @return an input stream to the pseudoterminal, never <code>null</code>.
+   */
+  public InputStream getInputStream()
+  {
+    checkState();
+
+    if ( m_masterIS != null )
+    {
+      return m_masterIS;
     }
 
-    // METHODS
-    
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public synchronized void close() throws IOException {
-        int fd = m_fdMaster;
-        if (fd != -1) {
-            m_fdMaster = -1;
-            // Make the FD non-blocking so we can close it properly...
-            int flags = fcntl(fd, F_GETFL, 0);
-            flags |= O_NONBLOCK;
-            int fcres = fcntl(fd, F_SETFL, flags);
-            if (fcres == 0) {
-                int err = JTermios.close(fd);
-                if (err != 0) {
-                    throw new IOException("Failed to close pseudoterminal!");
-                }
-
-                m_masterIS = closeSilently(m_masterIS);
-                m_masterOS = closeSilently(m_masterOS);
-            }
-        }
-    }
-
-    /**
-     * Returns the input stream to the pseudoterminal.
-     * 
-     * @return an input stream to the pseudoterminal, never <code>null</code>.
-     */
-    public InputStream getInputStream() {
+    // Inspired by PureJavaComm...
+    return m_masterIS = new InputStream()
+    {
+      @Override
+      public int available() throws IOException
+      {
         checkState();
 
-        if (m_masterIS != null) {
-            return m_masterIS;
+        int[] available = { 0 };
+        if ( ioctl( m_fdMaster, FIONREAD, available ) < 0 )
+        {
+          close();
+          throw new EOFException();
         }
 
-        // Inspired by PureJavaComm...
-        return m_masterIS = new InputStream() {
-            @Override
-            public int available() throws IOException {
-                checkState();
-                int[] available = { 0 };
-                if (ioctl(m_fdMaster, FIONREAD, available) < 0) {
-                    close();
-                    throw new EOFException();
-                }
-                return available[0];
-            }
+        return available[0];
+      }
 
-            @Override
-            public void close() throws IOException {
-                checkState();
-                Pty.this.close();
-            }
-
-            @Override
-            public int read() throws IOException {
-                checkState();
-                byte[] b = new byte[1];
-                return read(b, 0, 1);
-            }
-
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                checkState();
-                return JTermios.read(m_fdMaster, b, len);
-            }
-        };
-    }
-
-    /**
-     * Returns the output stream to the pseudoterminal.
-     * 
-     * @return an output stream to the pseudoterminal, never <code>null</code>.
-     */
-    public OutputStream getOutputStream() {
+      @Override
+      public void close() throws IOException
+      {
         checkState();
 
-        if (m_masterOS != null) {
-            return m_masterOS;
-        }
+        super.close();
+      }
 
-        // Inspired by PureJavaComm...
-        return m_masterOS = new OutputStream() {
-            private final byte[] m_buffer = new byte[2048];
-            
-            @Override
-            public void close() throws IOException {
-                checkState();
-                Pty.this.close();
-            }
+      @Override
+      public int read() throws IOException
+      {
+        checkState();
 
-            @Override
-            public void flush() throws IOException {
-                checkState();
-                if (tcdrain(m_fdMaster) < 0) {
-                    close();
-                    throw new EOFException();
-                }
-            }
+        byte[] b = new byte[1];
+        int read = read( b, 0, 1 );
 
-            @Override
-            public void write(byte[] b) throws IOException {
-                write(b, 0, b.length);
-            }
+        return ( read == 1 ) ? ( b[0] & 0xFF ) : -1;
+      }
 
-            @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                checkState();
+      @Override
+      public int read( byte[] b, int off, int len ) throws IOException
+      {
+        checkState();
 
-                while (len > 0) {
-                    int n = Math.min(len, Math.min(m_buffer.length, b.length - off));
-                    if (off > 0) {
-                        System.arraycopy(b, off, m_buffer, 0, n);
-                        n = JTermios.write(m_fdMaster, m_buffer, n);
-                    }
-                    else {
-                        n = JTermios.write(m_fdMaster, b, n);
-                    }
+        return JTermios.read( m_fdMaster, b, len );
+      }
+    };
+  }
 
-                    if (n < 0) {
-                        Pty.this.close();
-                        throw new EOFException();
-                    }
+  /**
+   * Returns the output stream to the pseudoterminal.
+   * 
+   * @return an output stream to the pseudoterminal, never <code>null</code>.
+   */
+  public OutputStream getOutputStream()
+  {
+    checkState();
 
-                    len -= n;
-                    off += n;
-                }
-            }
-
-            @Override
-            public void write(int b) throws IOException {
-                write(new byte[] { (byte) b }, 0, 1);
-            }
-        };
-    }
-    
-    /**
-     * Returns the current window size of this PTY.
-     * 
-     * @return a {@link WinSize} instance with information about the master side of the PTY, never <code>null</code>.
-     * @throws IOException in case obtaining the window size failed.
-     */
-    public WinSize getWinSize() throws IOException {
-        WinSize result = new WinSize();
-        if (JPty.getWinSize(m_fdMaster, result) < 0) {
-            throw new IOException("Failed to get window size: " + JPty.errno());
-        }
-        return result;
-    }
-    
-    /**
-     * Sets the current window size of this PTY.
-     * 
-     * @param winSize the {@link WinSize} instance to set on the master side of the PTY, cannot be <code>null</code>.
-     * @throws IllegalArgumentException in case the given argument was <code>null</code>.
-     * @throws IOException in case obtaining the window size failed.
-     */
-    public void setWinSize(WinSize winSize) throws IOException {
-        if (winSize == null) {
-            throw new IllegalArgumentException("WinSize cannot be null!");
-        }
-        if (JPty.setWinSize(m_fdMaster, winSize) < 0) {
-            throw new IOException("Failed to set window size: " + JPty.errno());
-        }
+    if ( m_masterOS != null )
+    {
+      return m_masterOS;
     }
 
-    /**
-     * Causes the current thread to wait, if necessary, until the process represented by this PTY object has terminated. This method returns immediately if the subprocess has already terminated. If the subprocess has not yet terminated, the calling thread
-     * will be blocked until the subprocess exits.
-     * 
-     * @return the exit value of the process. By convention, <tt>0</tt> indicates normal termination.
-     * @exception InterruptedException if the current thread is interrupted by another thread while it is waiting, then the wait is ended and an {@link InterruptedException} is thrown.
-     */
-    public int waitFor() throws InterruptedException {
-        if (m_childPid < 0) {
-            return -1;
-        }
+    // Inspired by PureJavaComm...
+    return m_masterOS = new OutputStream()
+    {
+      private final byte[] m_buffer = new byte[2048];
 
-        int[] stat = new int[] { -1 };
-        // Blocks until the child PID is terminated!!!
-        JPty.waitpid(m_childPid, stat, 0);
-        
-        return stat[0];
+      @Override
+      public void close() throws IOException
+      {
+        checkState();
+
+        super.close();
+      }
+
+      @Override
+      public void flush() throws IOException
+      {
+        checkState();
+
+        if ( tcdrain( m_fdMaster ) < 0 )
+        {
+          close();
+          throw new EOFException();
+        }
+      }
+
+      @Override
+      public void write( byte[] b ) throws IOException
+      {
+        write( b, 0, b.length );
+      }
+
+      @Override
+      public void write( byte[] b, int off, int len ) throws IOException
+      {
+        checkState();
+
+        while ( len > 0 )
+        {
+          int n = Math.min( len, Math.min( m_buffer.length, b.length - off ) );
+          if ( off > 0 )
+          {
+            System.arraycopy( b, off, m_buffer, 0, n );
+            n = JTermios.write( m_fdMaster, m_buffer, n );
+          }
+          else
+          {
+            n = JTermios.write( m_fdMaster, b, n );
+          }
+
+          if ( n < 0 )
+          {
+            Pty.this.close();
+            throw new EOFException();
+          }
+
+          len -= n;
+          off += n;
+        }
+      }
+
+      @Override
+      public void write( int b ) throws IOException
+      {
+        write( new byte[] { ( byte )b }, 0, 1 );
+      }
+    };
+  }
+
+  /**
+   * Returns the current window size of this PTY.
+   * 
+   * @return a {@link WinSize} instance with information about the master side
+   *         of the PTY, never <code>null</code>.
+   * @throws IOException
+   *           in case obtaining the window size failed.
+   */
+  public WinSize getWinSize() throws IOException
+  {
+    WinSize result = new WinSize();
+    if ( JPty.getWinSize( m_fdMaster, result ) < 0 )
+    {
+      throw new IOException( "Failed to get window size: " + JPty.errno() );
+    }
+    return result;
+  }
+
+  /**
+   * Tests whether the child-process is still alive or already terminated.
+   * 
+   * @return <code>true</code> if the child process is still alive,
+   *         <code>false</code> if it is terminated.
+   */
+  public boolean isChildAlive()
+  {
+    return JPty.isProcessAlive( m_childPid );
+  }
+
+  /**
+   * Sets the current window size of this PTY.
+   * 
+   * @param winSize
+   *          the {@link WinSize} instance to set on the master side of the PTY,
+   *          cannot be <code>null</code>.
+   * @throws IllegalArgumentException
+   *           in case the given argument was <code>null</code>.
+   * @throws IOException
+   *           in case obtaining the window size failed.
+   */
+  public void setWinSize( WinSize winSize ) throws IOException
+  {
+    if ( winSize == null )
+    {
+      throw new IllegalArgumentException( "WinSize cannot be null!" );
+    }
+    if ( JPty.setWinSize( m_fdMaster, winSize ) < 0 )
+    {
+      throw new IOException( "Failed to set window size: " + JPty.errno() );
+    }
+  }
+
+  /**
+   * Causes the current thread to wait, if necessary, until the process
+   * represented by this PTY object has terminated. This method returns
+   * immediately if the subprocess has already terminated. If the subprocess has
+   * not yet terminated, the calling thread will be blocked until the subprocess
+   * exits.
+   * 
+   * @return the exit value of the process. By convention, <tt>0</tt> indicates
+   *         normal termination.
+   * @exception InterruptedException
+   *              if the current thread is interrupted by another thread while
+   *              it is waiting, then the wait is ended and an
+   *              {@link InterruptedException} is thrown.
+   */
+  public int waitFor() throws InterruptedException
+  {
+    if ( m_childPid < 0 )
+    {
+      return -1;
     }
 
-    private void checkState() {
-        if (m_fdMaster < 0) {
-            throw new IllegalStateException("Invalid file descriptor; PTY already closed?!");
-        }
+    int[] stat = new int[] { -1 };
+    // Blocks until the child PID is terminated!!!
+    waitpid( m_childPid, stat, 0 );
+
+    return stat[0];
+  }
+
+  private void checkState()
+  {
+    if ( m_fdMaster < 0 )
+    {
+      throw new IllegalStateException( "Invalid file descriptor; PTY already closed?!" );
     }
-    
-    private <T extends Closeable> T closeSilently(T resource) {
-        try {
-            if (resource != null) {
-                resource.close();
-            }
-        }
-        catch (IllegalStateException e ) {
-            // Ignore...
-        }
-        catch (IOException e) {
-            // Ignore...
-        }
-        return null;
+  }
+
+  private <T extends Closeable> T closeSilently( T resource )
+  {
+    try
+    {
+      if ( resource != null )
+      {
+        resource.close();
+      }
     }
+    catch ( Exception e )
+    {
+      // Ignore...
+    }
+    return null;
+  }
 }

@@ -91,6 +91,19 @@ public class JPty
     int getWinSize( int fd, WinSize ws );
 
     /**
+     * Terminates or signals the process with the given PID.
+     * 
+     * @param pid
+     *          the process ID to terminate or signal;
+     * @param signal
+     *          the signal number to send, for example, 9 to terminate the
+     *          process.
+     * @return a value of <tt>0</tt> upon success, or a non-zero value in case
+     *         of an error (see {@link JPty#errno()} for details).
+     */
+    int kill( int pid, int sig );
+
+    /**
      * Sets the window size information for the process with the given FD using
      * the given {@link WinSize} structure.
      * 
@@ -133,6 +146,21 @@ public class JPty
 
   public static int ECHOCTL = 0x1000;
   public static int ECHOKE = 0x4000;
+
+  public static int SIGHUP = 1;
+  public static int SIGINT = 2;
+  public static int SIGQUIT = 3;
+  public static int SIGILL = 4;
+  public static int SIGABORT = 6;
+  public static int SIGFPE = 8;
+  public static int SIGKILL = 9;
+  public static int SIGSEGV = 11;
+  public static int SIGPIPE = 13;
+  public static int SIGALRM = 14;
+  public static int SIGTERM = 15;
+
+  public static int WNOHANG = 1;
+  public static int WUNTRACED = 2;
 
   // VARIABLES
 
@@ -293,6 +321,21 @@ public class JPty
   }
 
   /**
+   * Tests whether the process with the given process ID is alive or terminated.
+   * 
+   * @param pid
+   *          the process-ID to test.
+   * @return <code>true</code> if the process with the given process ID is
+   *         alive, <code>false</code> if it is terminated.
+   */
+  public static boolean isProcessAlive( int pid )
+  {
+    int[] stat = { -1 };
+    int result = JPty.waitpid( pid, stat, WNOHANG );
+    return ( result == 0 ) && ( stat[0] < 0 );
+  }
+
+  /**
    * Sets the window size for the given file descriptor.
    * 
    * @param fd
@@ -304,6 +347,22 @@ public class JPty
   public static int setWinSize( int fd, WinSize ws )
   {
     return m_jpty.setWinSize( fd, ws );
+  }
+
+  /**
+   * Terminates or signals the process with the given PID.
+   * 
+   * @param pid
+   *          the process ID to terminate or signal;
+   * @param signal
+   *          the signal number to send, for example, 9 to terminate the
+   *          process.
+   * @return a value of <tt>0</tt> upon success, or a non-zero value in case of
+   *         an error.
+   */
+  public static int signal( int pid, int signal )
+  {
+    return m_jpty.kill( pid, signal );
   }
 
   /**

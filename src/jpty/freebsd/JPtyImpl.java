@@ -33,11 +33,27 @@ import com.sun.jna.Structure;
 
 
 /**
- * Provides the PTY specific functions for FreeBSD.
+ * Provides a {@link JPtyInterface} implementation for FreeBSD.
  */
 public class JPtyImpl implements JPtyInterface
 {
   // INNER TYPES
+
+  public interface FreeBSD_C_lib extends com.sun.jna.Library
+  {
+    int execve( String command, StringArray argv, StringArray env );
+
+    int ioctl( int fd, int cmd, winsize arg );
+
+    int kill( int pid, int signal );
+
+    int waitpid( int pid, int[] stat, int options );
+  }
+
+  public interface FreeBSD_Util_lib extends com.sun.jna.Library
+  {
+    int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
+  }
 
   public static class winsize extends Structure
   {
@@ -65,20 +81,6 @@ public class JPtyImpl implements JPtyInterface
       winSize.ws_xpixel = ws_xpixel;
       winSize.ws_ypixel = ws_ypixel;
     }
-  }
-
-  public interface FreeBSD_Util_lib extends com.sun.jna.Library
-  {
-    public int forkpty( int[] amaster, byte[] name, termios termp, winsize winp );
-  }
-
-  public interface FreeBSD_C_lib extends com.sun.jna.Library
-  {
-    public int execve( String command, StringArray argv, StringArray env );
-
-    public int ioctl( int fd, int cmd, winsize arg );
-
-    public int waitpid( int pid, int[] stat, int options );
   }
 
   // CONSTANTS
@@ -146,6 +148,12 @@ public class JPtyImpl implements JPtyInterface
     ws.update( winSize );
 
     return r;
+  }
+
+  @Override
+  public int kill( int pid, int signal )
+  {
+    return m_Clib.kill( pid, signal );
   }
 
   @Override
