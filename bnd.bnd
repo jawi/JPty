@@ -1,5 +1,5 @@
 -buildpath: lib/jna.jar;version=file,\
-    lib/purejavacomm-0.0.16.jar;version=file,\
+    lib/purejavacomm-0.0.17.jar;version=file,\
 	junit.osgi;version=3.8.2
 Private-Package: \
     jpty.linux,\
