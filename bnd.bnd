@@ -7,5 +7,5 @@ Private-Package: \
 	jpty.macosx,\
 	jpty.solaris,\
 	jpty.windows
-Export-Package: jpty;version=1.0.0
-Bundle-Version: 0.0.5
+Export-Package: jpty
+Bundle-Version: 0.1.0

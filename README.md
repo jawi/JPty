@@ -34,7 +34,15 @@ Using this library is relatively easy:
     pty.close();
 
 The operating systems currently supported by JPty are: FreeBSD, Linux, OSX and
-Solaris. Note that this library is not yet fully tested on all platforms.  
+Solaris.  
+**Note that this library is not yet fully tested on all platforms.**
+
+## Changes
+
+    0.0.5 | 15-02-2013 | Initial version.
+    0.1.0 | 01-06-2013 | Fixed an issue with prematurely closing a PTY while
+          |            | the child process is still running. Thanks to traff
+          |            | for reporting this.
 
 ## Author
 
