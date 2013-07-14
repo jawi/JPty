@@ -22,6 +22,7 @@ package jpty;
 
 
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,20 +50,17 @@ public class JPtyTest extends TestCase
   }
 
   /**
-   * Tests that the child process is terminated if the {@link Pty} closed before
-   * the child process is finished. Should keep track of issue #1.
+   * Remove the 'interactive' prefix to run an interactive bash console.
    */
-  public void testClosePtyTerminatesChildOk() throws Exception
+  public void interactiveTestRunConsoleOk() throws Exception
   {
     final CountDownLatch latch = new CountDownLatch( 1 );
 
-    Command cmd = preparePingCommand( 15 );
+    Command cmd = new Command( "/bin/bash", new String[] { "-i" } );
 
     // Start the process in a PTY...
     final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
     final int[] result = { -1 };
-
-    final AtomicInteger readChars = new AtomicInteger();
 
     // Asynchronously check whether the output of the process is captured
     // properly...
@@ -79,7 +77,7 @@ public class JPtyTest extends TestCase
           {
             if ( ch >= 0 )
             {
-              readChars.incrementAndGet();
+              System.out.write( ch );
             }
           }
         }
@@ -97,15 +95,18 @@ public class JPtyTest extends TestCase
     {
       public void run()
       {
+        OutputStream os = pty.getOutputStream();
+
         try
         {
-          TimeUnit.MILLISECONDS.sleep( 500L );
-
-          pty.close();
-
-          result[0] = pty.waitFor();
-
-          latch.countDown();
+          int ch;
+          while ( pty.isChildAlive() && ( ch = System.in.read() ) >= 0 )
+          {
+            if ( ch >= 0 )
+            {
+              os.write( ch );
+            }
+          }
         }
         catch ( Exception e )
         {
@@ -115,9 +116,11 @@ public class JPtyTest extends TestCase
     };
     t2.start();
 
-    assertTrue( latch.await( 10, TimeUnit.SECONDS ) );
+    assertTrue( latch.await( 60, TimeUnit.SECONDS ) );
     // We should've waited long enough to have read some of the input...
-    assertTrue( readChars.get() > 0 );
+    // assertTrue( readChars.get() > 0 );
+
+    result[0] = pty.waitFor();
 
     t1.join();
     t2.join();
@@ -177,6 +180,83 @@ public class JPtyTest extends TestCase
         try
         {
           TimeUnit.MILLISECONDS.sleep( 1500L );
+
+          pty.close();
+
+          result[0] = pty.waitFor();
+
+          latch.countDown();
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t2.start();
+
+    assertTrue( latch.await( 10, TimeUnit.SECONDS ) );
+    // We should've waited long enough to have read some of the input...
+    assertTrue( readChars.get() > 0 );
+
+    t1.join();
+    t2.join();
+
+    assertTrue( "Unexpected process result: " + result[0], -1 == result[0] );
+  }
+
+  /**
+   * Tests that the child process is terminated if the {@link Pty} closed before
+   * the child process is finished. Should keep track of issue #1.
+   */
+  public void testClosePtyTerminatesChildOk() throws Exception
+  {
+    final CountDownLatch latch = new CountDownLatch( 1 );
+
+    Command cmd = preparePingCommand( 15 );
+
+    // Start the process in a PTY...
+    final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
+    final int[] result = { -1 };
+
+    final AtomicInteger readChars = new AtomicInteger();
+
+    // Asynchronously check whether the output of the process is captured
+    // properly...
+    Thread t1 = new Thread()
+    {
+      public void run()
+      {
+        InputStream is = pty.getInputStream();
+
+        try
+        {
+          int ch;
+          while ( pty.isChildAlive() && ( ch = is.read() ) >= 0 )
+          {
+            if ( ch >= 0 )
+            {
+              readChars.incrementAndGet();
+            }
+          }
+        }
+        catch ( Exception e )
+        {
+          e.printStackTrace();
+        }
+      }
+    };
+    t1.start();
+
+    // Asynchronously wait for a little while, then close the PTY, which should
+    // force our child process to be terminated...
+    Thread t2 = new Thread()
+    {
+      public void run()
+      {
+        try
+        {
+          TimeUnit.MILLISECONDS.sleep( 500L );
 
           pty.close();
 
