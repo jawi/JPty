@@ -60,7 +60,6 @@ public class JPtyTest extends TestCase
 
     // Start the process in a PTY...
     final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
-    final int[] result = { -1 };
 
     // Asynchronously check whether the output of the process is captured
     // properly...
@@ -80,6 +79,8 @@ public class JPtyTest extends TestCase
               System.out.write( ch );
             }
           }
+          
+          latch.countDown();
         }
         catch ( Exception e )
         {
@@ -116,16 +117,15 @@ public class JPtyTest extends TestCase
     };
     t2.start();
 
-    assertTrue( latch.await( 60, TimeUnit.SECONDS ) );
+    assertTrue( latch.await( 600, TimeUnit.SECONDS ) );
     // We should've waited long enough to have read some of the input...
-    // assertTrue( readChars.get() > 0 );
 
-    result[0] = pty.waitFor();
+    int result = pty.waitFor();
 
     t1.join();
     t2.join();
 
-    assertTrue( "Unexpected process result: " + result[0], -1 == result[0] );
+    assertTrue( "Unexpected process result: " + result, -1 == result );
   }
 
   /**
@@ -136,7 +136,7 @@ public class JPtyTest extends TestCase
   {
     final CountDownLatch latch = new CountDownLatch( 1 );
 
-    Command cmd = preparePingCommand( 1 );
+    Command cmd = preparePingCommand( 2 );
 
     // Start the process in a PTY...
     final Pty pty = JPty.execInPTY( cmd.m_command, cmd.m_args );
@@ -179,7 +179,7 @@ public class JPtyTest extends TestCase
       {
         try
         {
-          TimeUnit.MILLISECONDS.sleep( 1500L );
+          TimeUnit.MILLISECONDS.sleep( 2500L );
 
           pty.close();
 
@@ -358,9 +358,13 @@ public class JPtyTest extends TestCase
     {
       return new Command( "/usr/sbin/ping", new String[] { "-s", "127.0.0.1", "64", value } );
     }
-    else if ( Platform.isMac() || Platform.isLinux() || Platform.isFreeBSD() )
+    else if ( Platform.isMac() || Platform.isFreeBSD() )
     {
       return new Command( "/sbin/ping", new String[] { "-c", value, "127.0.0.1" } );
+    }
+    else if ( Platform.isLinux() )
+    {
+      return new Command( "/bin/ping", new String[] { "-c", value, "127.0.0.1" } );
     }
 
     throw new RuntimeException( "Unsupported platform!" );

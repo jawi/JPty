@@ -266,7 +266,7 @@ public class JPty
     byte[] name = new byte[128];
     int pid;
 
-    if ( ( pid = m_jpty.forkpty( master, name, termios, null ) ) < 0 )
+    if ( ( pid = m_jpty.forkpty( master, name, termios, winsize ) ) < 0 )
     {
       throw new JPtyException( "Failed to open PTY!", errno() );
     }
