@@ -21,6 +21,7 @@
 package jpty;
 
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.CountDownLatch;
@@ -79,7 +80,7 @@ public class JPtyTest extends TestCase
               System.out.write( ch );
             }
           }
-          
+
           latch.countDown();
         }
         catch ( Exception e )
@@ -125,7 +126,7 @@ public class JPtyTest extends TestCase
     t1.join();
     t2.join();
 
-    assertTrue( "Unexpected process result: " + result, -1 == result );
+    assertTrue( "Unexpected process result: " + result, 0 == result );
   }
 
   /**
@@ -211,7 +212,7 @@ public class JPtyTest extends TestCase
    */
   public void testClosePtyTerminatesChildOk() throws Exception
   {
-    final CountDownLatch latch = new CountDownLatch( 1 );
+    final CountDownLatch latch = new CountDownLatch( 2 );
 
     Command cmd = preparePingCommand( 15 );
 
@@ -240,9 +241,11 @@ public class JPtyTest extends TestCase
             }
           }
         }
-        catch ( Exception e )
+        catch ( IOException e )
         {
-          e.printStackTrace();
+          // Our child should be interrupted, causing an I/O exception to be
+          // thrown. This is exactly what we're looking for...
+          latch.countDown();
         }
       }
     };
@@ -262,6 +265,8 @@ public class JPtyTest extends TestCase
 
           result[0] = pty.waitFor();
 
+          // If we're here, this means that the child process is successfully
+          // terminated...
           latch.countDown();
         }
         catch ( Exception e )

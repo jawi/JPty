@@ -29,6 +29,7 @@ import static jtermios.JTermios.FIONREAD;
 import static jtermios.JTermios.F_GETFL;
 import static jtermios.JTermios.F_SETFL;
 import static jtermios.JTermios.O_NONBLOCK;
+import static jtermios.JTermios.errno;
 import static jtermios.JTermios.fcntl;
 import static jtermios.JTermios.ioctl;
 import static jtermios.JTermios.tcdrain;
@@ -190,7 +191,18 @@ public final class Pty implements Closeable
       {
         checkState();
 
-        return JTermios.read( m_fdMaster, b, len );
+        int read = JTermios.read( m_fdMaster, b, len );
+        // see read(2), section about possible return values; thanks to ceharris
+        // for pointing this out...
+        if ( read == 0 )
+        {
+          return -1; // EOF
+        }
+        else if ( read < 0 )
+        {
+          closeWithException( "I/O read failed with errno #" + errno() + "!" );
+        }
+        return read;
       }
     };
   }
@@ -229,8 +241,7 @@ public final class Pty implements Closeable
 
         if ( tcdrain( m_fdMaster ) < 0 )
         {
-          close();
-          throw new EOFException();
+          closeWithException( "I/O flush failed with errno #" + errno() + "!" );
         }
       }
 
@@ -260,8 +271,7 @@ public final class Pty implements Closeable
 
           if ( n < 0 )
           {
-            Pty.this.close();
-            throw new EOFException();
+            closeWithException( "I/O write failed with errno #" + errno() + "!" );
           }
 
           len -= n;
@@ -357,7 +367,7 @@ public final class Pty implements Closeable
     return stat[0];
   }
 
-  private void checkState()
+  void checkState()
   {
     if ( m_fdMaster < 0 )
     {
@@ -365,7 +375,21 @@ public final class Pty implements Closeable
     }
   }
 
-  private <T extends Closeable> T closeSilently( T resource )
+  void closeWithException( String msg ) throws IOException
+  {
+    IOException cause = null;
+    try
+    {
+      close();
+    }
+    catch ( IOException suppressed )
+    {
+      cause = suppressed;
+    }
+    throw new IOException( msg, cause );
+  }
+
+  static <T extends Closeable> T closeSilently( T resource )
   {
     try
     {
